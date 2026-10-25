@@ -441,4 +441,27 @@ class OutputFormatsReleaseTest extends ReleaseTestCase
         @unlink($junitPath);
         @unlink($codeclimatePath);
     }
+
+
+    /**
+     * 4.0 — the SARIF driver is named `alfil`: GitHub Code Scanning keys its
+     * alerts by tool name, so the rename closes and reopens them once. A clean
+     * run is the one run the binary itself signs (a tool with issues gets a
+     * run of its own, named after the tool).
+     *
+     * @test
+     */
+    public function sarif_names_alfil_as_the_driver_of_a_clean_run(): void
+    {
+        $this->configurationFileBuilder
+            ->setV3Flows(['qa' => ['jobs' => ['ok_job']]])
+            ->setV3Jobs(['ok_job' => ['type' => 'custom', 'script' => 'true']]);
+        file_put_contents($this->configPath, $this->configurationFileBuilder->buildV3Php());
+
+        passthru("$this->alfil flow qa --format=sarif --config=$this->configPath 2>/dev/null", $exitCode);
+
+        $decoded = json_decode($this->getActualOutput(), true);
+        $this->assertSame(0, $exitCode);
+        $this->assertSame(['alfil'], array_column(array_column(array_column($decoded['runs'], 'tool'), 'driver'), 'name'));
+    }
 }

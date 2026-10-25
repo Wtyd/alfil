@@ -73,4 +73,32 @@ class CommitMsgEnvFileReleaseTest extends ReleaseTestCase
 
         $this->assertSame(0, $exitCode, $stdout);
     }
+
+
+    /**
+     * @test
+     *
+     * The 3.x name is not read (it never was). From testsDir there is no
+     * `.git/COMMIT_EDITMSG` to fall back to, so a binary that read the old
+     * variable would validate the file; this one reports that no source is
+     * available, naming the variable that would have worked.
+     */
+    public function the_old_variable_name_is_not_read()
+    {
+        $output = [];
+        exec(
+            'cd ' . escapeshellarg(self::TESTS_PATH) . ' && GITHOOKS_COMMIT_MSG_FILE='
+                . escapeshellarg(realpath($this->badFile)) . ' ./alfil flow commit-checks --format=json --config=alfil.php 2>/dev/null',
+            $output,
+            $exitCode
+        );
+        $payload = json_decode(implode("\n", $output), true);
+
+        $this->assertSame(1, $exitCode, implode("\n", $output));
+        $this->assertSame(
+            "commit-msg: no message file available. Provide --message-file, --message, "
+                . "set ALFIL_COMMIT_MSG_FILE, or run via the 'commit-msg' git hook.",
+            $payload['jobs'][0]['output']
+        );
+    }
 }

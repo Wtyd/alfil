@@ -19,11 +19,11 @@ class AlfilRenameReleaseTest extends ReleaseTestCase
     private const V3 = "<?php return ['hooks' => ['pre-commit' => ['qa']], "
         . "'flows' => ['qa' => ['jobs' => ['ok']]], 'jobs' => ['ok' => ['type' => 'custom', 'script' => 'true']]];";
 
-    /** Run the binary from testsDir and return [exit code, stdout]. */
-    private function runInTestsDir(string $arguments): array
+    /** Run the binary from testsDir (with an optional `VAR=value` prefix) and return [exit code, stdout]. */
+    private function runInTestsDir(string $arguments, string $env = ''): array
     {
         $output = [];
-        exec('cd ' . escapeshellarg(self::TESTS_PATH) . " && ./alfil $arguments 2>/dev/null", $output, $exitCode);
+        exec('cd ' . escapeshellarg(self::TESTS_PATH) . " && $env ./alfil $arguments 2>/dev/null", $output, $exitCode);
 
         return [$exitCode, implode("\n", $output)];
     }
@@ -97,5 +97,124 @@ class AlfilRenameReleaseTest extends ReleaseTestCase
         $this->assertSame(0, $exitCode, $stdout);
         $this->assertNotEmpty($runtime['alfilVersion'] ?? '');
         $this->assertSame($runtime['alfilVersion'], $runtime['githooksVersion'] ?? null);
+    }
+
+
+    /** @test The not-found message names the 4.0 file and both locations. */
+    public function a_missing_configuration_is_reported_with_the_new_name()
+    {
+        [$exitCode, $stdout] = $this->runInTestsDir('conf:check --format=json');
+        $payload = json_decode($stdout, true);
+
+        $this->assertSame(1, $exitCode, $stdout);
+        $this->assertSame([false, [
+            'Configuration file not found. Expected alfil.php in the project root or in qa/ (or pass --config=PATH).',
+        ]
+        ], [$payload['valid'], $payload['errors']]);
+    }
+
+    /** @test The new name wins over the location: qa/alfil.php beats a githooks.php in the root. */
+    public function qa_alfil_php_wins_over_a_githooks_php_in_the_root()
+    {
+        mkdir(self::TESTS_PATH . '/qa', 0777, true);
+        file_put_contents(self::TESTS_PATH . '/qa/alfil.php', self::V3);
+        file_put_contents(self::TESTS_PATH . '/githooks.php', self::V3);
+
+        [$exitCode, $stdout] = $this->runInTestsDir('conf:check --format=json');
+        $payload = json_decode($stdout, true);
+
+        $this->assertSame(0, $exitCode, $stdout);
+        $this->assertStringEndsWith('/qa/alfil.php', $payload['file']['path']);
+        $this->assertSame([[], [
+            "'githooks.php' is ignored: 'qa/alfil.php' takes precedence. Remove it or merge it into 'qa/alfil.php'.",
+        ]
+        ], [$payload['deprecations'], $payload['warnings']]);
+    }
+
+    /** @test alfil.local.php overrides alfil.php, with nothing to deprecate. */
+    public function alfil_local_php_overrides_alfil_php()
+    {
+        file_put_contents(self::TESTS_PATH . '/alfil.php', self::V3);
+        file_put_contents(self::TESTS_PATH . '/alfil.local.php', "<?php return ['flows' => ['options' => ['processes' => 3]]];");
+
+        [$exitCode, $stdout] = $this->runInTestsDir('conf:check --format=json');
+        $payload = json_decode($stdout, true);
+
+        $this->assertSame(0, $exitCode, $stdout);
+        $this->assertSame([3, [], []], [$payload['options']['processes'], $payload['warnings'], $payload['deprecations']]);
+    }
+
+    /** @test An override named after the other file is ignored, and the hint says which one to rename. */
+    public function an_override_named_after_the_other_file_is_ignored_with_a_hint()
+    {
+        file_put_contents(self::TESTS_PATH . '/githooks.php', self::V3);
+        file_put_contents(self::TESTS_PATH . '/alfil.local.php', "<?php return ['flows' => ['options' => ['processes' => 3]]];");
+
+        [$exitCode, $stdout] = $this->runInTestsDir('conf:check --format=json');
+        $payload = json_decode($stdout, true);
+
+        $this->assertSame(0, $exitCode, $stdout);
+        $this->assertSame([1, [
+            "Deprecated: 'githooks.php' is renamed to 'alfil.php'. Will be removed in v5.0.",
+            "'alfil.local.php' is ignored next to 'githooks.php': rename it to 'githooks.local.php'.",
+        ]
+        ], [$payload['options']['processes'], $payload['warnings']]);
+    }
+
+    /**
+     * @test
+     * @dataProvider branchOverrideSources
+     *
+     * `ALFIL_BRANCH` is the branch override for `on` rules; `GITHOOKS_BRANCH`
+     * is still read when the new one is unset or empty, as an env-var-rename
+     * deprecation; `--branch` wins over both. The flow picks `full` only for a
+     * `release/*` branch, so the mode tells which source was read.
+     */
+    public function the_branch_override_reads_both_names_with_the_old_one_deprecated(
+        string $env,
+        string $flags,
+        string $expectedMode,
+        array $expectedDeprecations
+    ) {
+        file_put_contents(self::TESTS_PATH . '/alfil.php', "<?php return ['flows' => ['qa' => ["
+            . "'on' => ['release/*' => ['execution' => 'full'], '*' => ['execution' => 'fast']], 'jobs' => ['ok']]], "
+            . "'jobs' => ['ok' => ['type' => 'custom', 'script' => 'true']]];");
+
+        [$exitCode, $stdout] = $this->runInTestsDir("flow qa $flags --format=json", $env);
+        $payload = json_decode($stdout, true);
+
+        $this->assertSame(0, $exitCode, $stdout);
+        $this->assertSame([$expectedMode, $expectedDeprecations], [$payload['executionMode'], $payload['deprecations']]);
+    }
+
+    /** @return array<string, array{string, string, string, array}> */
+    public function branchOverrideSources(): array
+    {
+        $deprecated = [['job' => '', 'oldKey' => 'GITHOOKS_BRANCH', 'newKey' => 'ALFIL_BRANCH', 'removalVersion' => '5.0', 'kind' => 'env-var-rename']];
+
+        return [
+            // env prefix, extra flags, executionMode, deprecations
+            'old name alone: read, deprecated'        => ['GITHOOKS_BRANCH=release/1', '', 'full', $deprecated],
+            'new name alone: read, nothing deprecated' => ['ALFIL_BRANCH=release/1', '', 'full', []],
+            'new name wins over the old one'          => ['ALFIL_BRANCH=feature/x GITHOOKS_BRANCH=release/1', '', 'fast', []],
+            'empty new name counts as unset'          => ['ALFIL_BRANCH= GITHOOKS_BRANCH=release/1', '', 'full', $deprecated],
+            '--branch wins over both names'           => ['ALFIL_BRANCH=release/1 GITHOOKS_BRANCH=release/1', '--branch=feature/y', 'fast', []],
+        ];
+    }
+
+    /** @test conf:check warns about a hooks.command that still calls the removed binary. */
+    public function conf_check_warns_about_a_hooks_command_that_calls_the_removed_binary()
+    {
+        file_put_contents(self::TESTS_PATH . '/alfil.php', "<?php return ['hooks' => ['command' => 'php7.4 vendor/bin/githooks', "
+            . "'pre-commit' => ['qa']], 'flows' => ['qa' => ['jobs' => ['ok']]], 'jobs' => ['ok' => ['type' => 'custom', 'script' => 'true']]];");
+
+        [$exitCode, $stdout] = $this->runInTestsDir('conf:check --format=json');
+        $payload = json_decode($stdout, true);
+
+        $this->assertSame(0, $exitCode, $stdout);
+        $this->assertSame([true, [
+            "'hooks.command' calls the githooks binary, removed in 4.0: point it at alfil (e.g. 'php vendor/bin/alfil') and run 'alfil hook'.",
+        ]
+        ], [$payload['valid'], $payload['warnings']]);
     }
 }

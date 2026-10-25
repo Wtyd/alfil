@@ -147,4 +147,32 @@ class CIIntegrationReleaseTest extends ReleaseTestCase
             'GHA annotation body must include the humanised `line N` marker'
         );
     }
+
+
+    /**
+     * 4.0 — GitLab CI collapsible sections are named after alfil
+     * (`alfil_job_N`, `alfil_summary`). `GITHUB_ACTIONS` is unset for the
+     * run because the detector checks it first, and the release pipeline
+     * itself runs on GitHub Actions.
+     *
+     * @test
+     */
+    public function gitlab_ci_sections_are_named_after_alfil(): void
+    {
+        $this->configurationFileBuilder
+            ->setV3Flows(['qa' => ['jobs' => ['ok_job', 'ko_job']]])
+            ->setV3Jobs([
+                'ok_job' => ['type' => 'custom', 'script' => 'true'],
+                'ko_job' => ['type' => 'custom', 'script' => 'echo "src/Broken.php:42: Unexpected error" && exit 1'],
+            ]);
+        file_put_contents($this->configPath, $this->configurationFileBuilder->buildV3Php());
+
+        passthru("env -u GITHUB_ACTIONS GITLAB_CI=true $this->alfil flow qa --config=$this->configPath 2>&1", $exitCode);
+
+        preg_match_all('/section_(?:start|end):\d+:([a-z_0-9]+)/', $this->getActualOutput(), $matches);
+        $sections = array_values(array_unique($matches[1]));
+        sort($sections);
+        $this->assertSame(1, $exitCode);
+        $this->assertSame(['alfil_job_1', 'alfil_job_2', 'alfil_summary'], $sections);
+    }
 }
