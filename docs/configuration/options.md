@@ -181,7 +181,7 @@ return [
 ];
 ```
 
-See [Configuration File: Local Override](file.md#local-override-githookslocalphp) and [How-To: Docker & Local Override](../how-to/docker-local-override.md).
+See [Configuration File: Local Override](file.md#local-override-alfillocalphp) and [How-To: Docker & Local Override](../how-to/docker-local-override.md).
 
 ## Multi-report
 

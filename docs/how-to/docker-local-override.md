@@ -119,4 +119,4 @@ alfil flow qa --dry-run
 ## See also
 
 - [Configuration: Options — executable-prefix](../configuration/options.md#executable-prefix)
-- [Configuration File — Local Override](../configuration/file.md#local-override-githookslocalphp)
+- [Configuration File — Local Override](../configuration/file.md#local-override-alfillocalphp)
