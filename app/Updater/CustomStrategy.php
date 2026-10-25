@@ -22,4 +22,3 @@ class CustomStrategy extends GithubStrategy implements StrategyInterface
         return $downloadUrl . $build->getBuildPath() . DIRECTORY_SEPARATOR . basename(Phar::running());
     }
 }
-//https://github.com/Wtyd/githooks/raw/1.0.2-alpha//builds/githooks
