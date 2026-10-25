@@ -65,21 +65,74 @@ class HookV3ReleaseTest extends ReleaseTestCase
     public function it_refuses_to_install_from_a_missing_configuration_file()
     {
         $missing = self::TESTS_PATH . '/does-not-exist.php';
-        $snapshot = static function (): array {
-            $scripts = [];
-            foreach (['.githooks/pre-commit', '.git/hooks/pre-commit'] as $file) {
-                $scripts[$file] = is_file($file) ? (string) file_get_contents($file) : null;
-            }
-            return $scripts;
-        };
-        $before = $snapshot();
+        $before = self::hookScripts();
 
         passthru("$this->alfil hook pre-commit --config=$missing 2>&1", $exitCode);
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('Configuration file not found', $this->getActualOutput());
         $this->assertStringNotContainsString('created', $this->getActualOutput());
-        $this->assertSame($before, $snapshot(), 'no hook script may be written or changed');
+        $this->assertSame($before, self::hookScripts(), 'no hook script may be written or changed');
+    }
+
+    /**
+     * The hook scripts as they are, so a refused install can be shown to have
+     * written nothing.
+     *
+     * @return array<string, string|null>
+     */
+    private static function hookScripts(): array
+    {
+        $scripts = [];
+        foreach (['.githooks/pre-commit', '.git/hooks/pre-commit'] as $file) {
+            $scripts[$file] = is_file($file) ? (string) file_get_contents($file) : null;
+        }
+        return $scripts;
+    }
+
+    /**
+     * @test
+     *
+     * BUG-37: a configuration hook:run would refuse to run is not installed
+     * either. The errors went unreported and the scripts were written, so the
+     * failure surfaced on the first commit instead of at the install.
+     */
+    public function it_refuses_to_install_from_a_configuration_with_validation_errors()
+    {
+        file_put_contents($this->configPath, "<?php return ['hooks' => ['pre-commit' => ['qa']], "
+            . "'flows' => ['qa' => ['jobs' => ['lint']]], 'jobs' => ['lint' => ['type' => 'nonexistent']]];");
+        $before = self::hookScripts();
+
+        passthru("$this->alfil hook --config=$this->configPath 2>&1", $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertStringContainsString("Job 'lint': type 'nonexistent' is not a supported tool.", $this->getActualOutput());
+        $this->assertStringNotContainsString('installed', $this->getActualOutput());
+        $this->assertSame($before, self::hookScripts(), 'no hook script may be written or changed');
+    }
+
+    /**
+     * @test
+     *
+     * The warnings conf:check reports, hook reports too, before the install
+     * line. A `hooks.command` still calling the removed binary used to be
+     * baked into the scripts without a word.
+     */
+    public function it_prints_the_validation_warnings_before_installing()
+    {
+        file_put_contents($this->configPath, "<?php return ['hooks' => ['command' => 'php vendor/bin/githooks', "
+            . "'pre-commit' => ['qa']], 'flows' => ['qa' => ['jobs' => ['lint']]], "
+            . "'jobs' => ['lint' => ['type' => 'custom', 'script' => 'true']]];");
+        $warning = "'hooks.command' calls the githooks binary, removed in 4.0: point it at alfil "
+            . "(e.g. 'php vendor/bin/alfil') and run 'alfil hook'.";
+
+        passthru("$this->alfil hook --config=$this->configPath 2>&1", $exitCode);
+        $output = $this->getActualOutput();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString($warning, $output);
+        $this->assertStringContainsString('Hook pre-commit installed', $output);
+        $this->assertLessThan(strpos($output, 'Hook pre-commit installed'), strpos($output, $warning));
     }
 
     /** @test */

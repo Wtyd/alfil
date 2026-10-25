@@ -19,6 +19,8 @@ When you install with `--config=<file>`, the scripts also carry `--config` with 
 
 An explicit `--config` that cannot be used — the path does not exist, the file is a v2 or YAML configuration, or it does not return an array — is an error: the command prints it, exits 1 and installs nothing. The minimal `.git/hooks/` install described under [Legacy mode](#legacy-mode) only applies when there is no `--config` and no `alfil.php` in the default locations.
 
+A configuration that reads but does not validate — the errors [`conf:check`](conf-check.md) reports and `hook:run` refuses to run — is not installed either: the errors are printed and the command exits 1. Validation warnings, such as a `hooks.command` that still calls the removed `githooks` binary, are printed before the install line.
+
 ```bash
 alfil hook                  # Install all configured hooks
 alfil hook --config=qa/alfil.php   # Hooks run qa/alfil.php on every trigger

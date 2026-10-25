@@ -5,6 +5,7 @@ namespace Wtyd\Alfil\App\Commands;
 use Exception;
 use LaravelZero\Framework\Commands\Command;
 use Wtyd\Alfil\Configuration\ConfigurationParser;
+use Wtyd\Alfil\Configuration\ConfigurationResult;
 use Wtyd\Alfil\Configuration\Exception\ConfigurationFileNotFoundException;
 use Wtyd\Alfil\Hooks;
 use Wtyd\Alfil\Hooks\HookInstaller;
@@ -81,6 +82,10 @@ class CreateHookCommand extends Command
             return 1;
         }
 
+        if (!$this->reportValidation($config)) {
+            return 1;
+        }
+
         $hooks = $config->getHooks();
 
         if ($hooks === null || empty($hooks->getEvents())) {
@@ -104,6 +109,29 @@ class CreateHookCommand extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * The parser's verdict decides the install the way it decides a run
+     * (BUG-37): errors refuse it, warnings are reported before it, as
+     * conf:check and hook:run report them. Returns false when refused.
+     */
+    private function reportValidation(ConfigurationResult $config): bool
+    {
+        $validation = $config->getValidation();
+
+        foreach ($validation->getErrors() as $error) {
+            $this->printer->resultError($error);
+        }
+        if ($config->hasErrors()) {
+            return false;
+        }
+
+        foreach ($validation->getWarnings() as $warning) {
+            $this->printer->resultWarning($warning);
+        }
+
+        return true;
     }
 
     /**

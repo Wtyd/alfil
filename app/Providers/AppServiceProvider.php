@@ -14,6 +14,7 @@ use Tests\Doubles\HookInstallerFake;
 use Tests\Doubles\HookStatusInspectorFake;
 use Tests\Doubles\ToolDetectorFake;
 use Tests\Utils\TestCase\SystemTestCase;
+use Wtyd\Alfil\Utils\Printer;
 use Wtyd\Alfil\Utils\Storage;
 
 class AppServiceProvider extends ServiceProvider
@@ -86,6 +87,11 @@ class AppServiceProvider extends ServiceProvider
             $this->app->singleton(HookInstaller::class, HookInstallerFake::class);
             $this->app->singleton(HookStatusInspector::class, HookStatusInspectorFake::class);
             $this->app->singleton(ToolDetector::class, ToolDetectorFake::class);
+            // The suite asserts on what the commands print; left to itself the
+            // Printer would colour or not depending on phpunit's stdout and CI.
+            $this->app->bind(Printer::class, function () {
+                return new Printer(false);
+            });
             Storage::$disk = 'testing';
         }
     }

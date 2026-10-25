@@ -309,6 +309,81 @@ class CreateHookCommandTest extends SystemTestCase
 
     /**
      * @test
+     * @dataProvider validationOutcomeProvider
+     *
+     * BUG-37: the parser's verdict decides the install the way it decides a
+     * run. Errors refuse it (exit 1, nothing written) and warnings are printed
+     * before the install line, as conf:check and hook:run report them. Before,
+     * both went unreported and the scripts were written; the failure surfaced
+     * on the first commit. Rows 3–6 of factors-hook-install.md.
+     *
+     * @param string[] $expected
+     * @param string[] $unexpected
+     */
+    function the_validation_outcome_decides_the_install(
+        string $config,
+        array $expected,
+        array $unexpected,
+        int $exitCode,
+        bool $installs
+    ) {
+        $configPath = getcwd() . '/' . self::TESTS_PATH . '/alfil.php';
+        file_put_contents($configPath, $config);
+
+        $command = $this->artisan("hook pre-commit --config=$configPath");
+        foreach ($expected as $text) {
+            $command->containsStringInOutput($text);
+        }
+        foreach ($unexpected as $text) {
+            $command->notContainsStringInOutput($text);
+        }
+        $command->assertExitCode($exitCode);
+        // The pending command runs on destruction; the files are checked after it ran.
+        $command->run();
+
+        $this->assertFileDoesNotExist($this->path . '/.git/hooks/pre-commit');
+        if ($installs) {
+            $this->assertFileExists($this->path . '/.githooks/pre-commit');
+        } else {
+            $this->assertDirectoryDoesNotExist($this->path . '/.githooks');
+        }
+    }
+
+    public function validationOutcomeProvider(): array
+    {
+        $php = static function (array $config): string {
+            return '<?php return ' . var_export($config, true) . ';';
+        };
+        $flows = ['qa' => ['jobs' => ['lint']]];
+        $jobs = ['lint' => ['type' => 'custom', 'script' => 'true']];
+        $badJobs = ['lint' => ['type' => 'nonexistent']];
+        $oldCommand = ['command' => 'php vendor/bin/githooks', 'pre-commit' => ['qa']];
+        $error = "❌ Job 'lint': type 'nonexistent' is not a supported tool.";
+        $warning = "⚠️ 'hooks.command' calls the githooks binary, removed in 4.0: point it at alfil "
+            . "(e.g. 'php vendor/bin/alfil') and run 'alfil hook'.";
+
+        return [
+            'errors: refused, nothing written' => [
+                $php(['hooks' => ['pre-commit' => ['qa']], 'flows' => $flows, 'jobs' => $badJobs]),
+                [$error], ['installed', 'created', '⚠️'], 1, false,
+            ],
+            'errors and warnings: only the errors' => [
+                $php(['hooks' => $oldCommand, 'flows' => $flows, 'jobs' => $badJobs]),
+                [$error], ['installed', 'created', '⚠️'], 1, false,
+            ],
+            'warnings, events declared: reported, then installed' => [
+                $php(['hooks' => $oldCommand, 'flows' => $flows, 'jobs' => $jobs]),
+                [$warning, 'Hook pre-commit installed'], ['❌'], 0, true,
+            ],
+            'warnings, no events: reported, nothing to install' => [
+                $php(['hooks' => ['command' => 'php vendor/bin/githooks'], 'flows' => $flows, 'jobs' => $jobs]),
+                [$warning, 'No hooks defined in configuration'], ['installed', '❌'], 0, false,
+            ],
+        ];
+    }
+
+    /**
+     * @test
      *
      * Without --config and without a file in the default locations there is
      * nothing to read in v3 terms, so the minimal install (one script in

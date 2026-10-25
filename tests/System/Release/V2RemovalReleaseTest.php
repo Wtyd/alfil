@@ -56,8 +56,9 @@ class V2RemovalReleaseTest extends ReleaseTestCase
 
     /**
      * Run the binary with stderr merged; returns [exit code, trimmed output].
-     * `conf:check` and `hook` colour the line even without a TTY, so the ANSI
-     * escapes are stripped: the contract under test is the text.
+     * On a CI runner the binary colours its lines even without a TTY (the
+     * logs render them), so the ANSI escapes are stripped: the contract under
+     * test is the text.
      */
     private function invoke(string $arguments): array
     {
