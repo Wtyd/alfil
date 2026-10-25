@@ -56,7 +56,7 @@ class TextOutputHandler implements OutputHandler
 
     public function onJobDryRun(string $jobName, string $command): void
     {
-        $this->printer->line("  \e[36m$jobName\e[0m");
+        $this->printer->line('  ' . $this->printer->paint($jobName, '36'));
         $this->printer->line("     $command");
     }
 

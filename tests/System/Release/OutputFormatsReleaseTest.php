@@ -58,6 +58,46 @@ class OutputFormatsReleaseTest extends ReleaseTestCase
         $this->assertStringContainsString('Results:', $stdout, 'stdout still carries the text report');
     }
 
+    /**
+     * @test
+     * @dataProvider textCommands
+     *
+     * Text output through a pipe carries no ANSI escapes. `flow`'s own lines
+     * were already clean (Symfony decorates only on a terminal) but the ones
+     * the Printer writes — OK/KO, the dry-run job names, conf:check's headings
+     * and errors, hook's install line — were coloured whatever stdout was. CI
+     * is unset because there the binary colours on purpose, terminal or not,
+     * the way `flow` forces it.
+     */
+    public function text_output_through_a_pipe_carries_no_ansi_escapes(string $command): void
+    {
+        $this->configurationFileBuilder
+            ->setV3Hooks(['pre-commit' => ['qa']])
+            ->setV3Flows(['qa' => ['jobs' => ['ok_job', 'ko_job']]])
+            ->setV3Jobs([
+                'ok_job' => ['type' => 'custom', 'script' => 'true'],
+                'ko_job' => ['type' => 'custom', 'script' => 'false'],
+            ]);
+        file_put_contents($this->configPath, $this->configurationFileBuilder->buildV3Php());
+
+        exec("env -u GITHUB_ACTIONS -u GITLAB_CI $this->alfil $command --config=$this->configPath 2>&1", $lines);
+        $output = implode("\n", $lines);
+
+        $this->assertNotSame('', $output);
+        $this->assertStringNotContainsString("\e[", $output);
+    }
+
+    /** @return array<string, array{string}> */
+    public function textCommands(): array
+    {
+        return [
+            'flow: OK/KO lines'          => ['flow qa'],
+            'flow --dry-run: job names'  => ['flow qa --dry-run'],
+            'conf:check: headings'       => ['conf:check'],
+            'hook: install line'         => ['hook'],
+        ];
+    }
+
     /** @test */
     public function json_v2_schema_includes_enriched_fields_per_job(): void
     {

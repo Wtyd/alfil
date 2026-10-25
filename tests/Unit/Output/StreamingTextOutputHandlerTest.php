@@ -17,6 +17,7 @@ class StreamingTextOutputHandlerTest extends UnitTestCase
     public function on_job_start_prints_header()
     {
         $printer = $this->createMock(Printer::class);
+        $printer->method('paint')->willReturnArgument(0);
         $printer->expects($this->once())
             ->method('line')
             ->with($this->stringContains('--- phpstan_src ---'));
@@ -101,6 +102,7 @@ class StreamingTextOutputHandlerTest extends UnitTestCase
     public function on_job_dry_run_prints_job_name_and_command()
     {
         $printer = $this->createMock(Printer::class);
+        $printer->method('paint')->willReturnArgument(0);
         $calls = [];
         $printer->expects($this->exactly(2))
             ->method('line')

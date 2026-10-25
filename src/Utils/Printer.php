@@ -4,11 +4,50 @@ declare(strict_types=1);
 
 namespace Wtyd\Alfil\Utils;
 
+use Wtyd\Alfil\Output\CI\CIEnvironment;
+
 /**
+ * Coloured lines for the text output, coloured only where the colours render:
+ * on a terminal, or on a CI runner, whose logs render ANSI (the rule
+ * FlowResultRenderer applies to the Symfony output). Through a pipe the text
+ * is plain. Pass $decorated to settle it explicitly.
+ *
  * @SuppressWarnings(PHPMD.TooManyPublicMethods)
  */
 class Printer
 {
+    private ?bool $decorated;
+
+    public function __construct(?bool $decorated = null)
+    {
+        $this->decorated = $decorated;
+    }
+
+    /** Wrap $text in the SGR $codes (`36`, `1`, `42` + `30`…) when colours render. */
+    public function paint(string $text, string ...$codes): string
+    {
+        if (!$this->decorated()) {
+            return $text;
+        }
+
+        $open = '';
+        foreach ($codes as $code) {
+            $open .= "\e[{$code}m";
+        }
+
+        return "{$open}{$text}\e[0m";
+    }
+
+    private function decorated(): bool
+    {
+        if ($this->decorated === null) {
+            $this->decorated = CIEnvironment::detect() !== CIEnvironment::NONE
+                || (defined('STDOUT') && stream_isatty(STDOUT));
+        }
+
+        return $this->decorated;
+    }
+
     public function resultWarning(string $message): void
     {
         echo "⚠️ ";
@@ -68,12 +107,12 @@ class Printer
     // Job status lines — indentation outside color block
     public function jobSuccess(string $jobName, string $time): void
     {
-        echo "  \e[42m\e[30m $jobName - OK. Time: $time \033[0m\n";
+        echo '  ' . $this->paint(" $jobName - OK. Time: $time ", '42', '30') . "\n";
     }
 
     public function jobError(string $jobName, string $time): void
     {
-        echo "  \e[41m\e[30m $jobName - KO. Time: $time \033[0m\n";
+        echo '  ' . $this->paint(" $jobName - KO. Time: $time ", '41', '30') . "\n";
     }
 
     // Green
@@ -84,13 +123,13 @@ class Printer
 
     public function success(string $message): void
     {
-        echo "\e[42m\e[30m$message\033[0m\n";
+        echo $this->paint($message, '42', '30') . "\n";
     }
 
     // Red
     public function error(string $message): void
     {
-        echo "\e[41m\e[30m$message\033[0m\n";
+        echo $this->paint($message, '41', '30') . "\n";
     }
 
     // Yellow
@@ -101,6 +140,6 @@ class Printer
 
     public function warning(string $message): void
     {
-        echo "\e[43m\e[30m$message\033[0m\n";
+        echo $this->paint($message, '43', '30') . "\n";
     }
 }

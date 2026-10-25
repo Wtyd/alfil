@@ -30,7 +30,7 @@ class StreamingTextOutputHandler implements OutputHandler
 
     public function onJobStart(string $jobName): void
     {
-        $this->printer->line("  \e[1m--- $jobName ---\e[0m");
+        $this->printer->line('  ' . $this->printer->paint("--- $jobName ---", '1'));
     }
 
     public function onJobOutput(string $jobName, string $chunk, bool $isStderr): void
@@ -55,7 +55,7 @@ class StreamingTextOutputHandler implements OutputHandler
 
     public function onJobDryRun(string $jobName, string $command): void
     {
-        $this->printer->line("  \e[36m$jobName\e[0m");
+        $this->printer->line('  ' . $this->printer->paint($jobName, '36'));
         $this->printer->line("     $command");
     }
 
